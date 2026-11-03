@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 MAX_INPUT_CHARS = 50_000
 EMPTY_MARKS = {"", "-", "—", "–", "н/д", "n/a", "na", "нет данных", "данных нет", "null", "none"}
-KNOWN_FIELDS = {"name", "manufacturer", "specs", "description"}
+KNOWN_FIELDS = {"name", "manufacturer", "specs", "description", "url"}
 
 
 class InputError(ValueError):
@@ -21,11 +21,12 @@ class Product:
     manufacturer: str = ""
     specs: dict[str, str] = field(default_factory=dict)
     description: str = ""
+    url: str = ""
     empty_specs: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     def blockers(self) -> list[str]:
-        """Причины, по которым черновик писать не из чего: модель в этом случае не вызывается."""
+        """Причины, по которым черновик писать не из чего."""
         problems = []
         if not self.name:
             problems.append("Не заполнено поле name (название товара).")
@@ -74,6 +75,7 @@ def _to_product(item) -> Product:
         name=_text_field(item, "name"),
         manufacturer=_text_field(item, "manufacturer"),
         description=_text_field(item, "description"),
+        url=_text_field(item, "url"),
     )
     _fill_specs(product, item.get("specs"))
     for key in sorted(item.keys() - KNOWN_FIELDS):

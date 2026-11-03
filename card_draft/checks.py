@@ -156,7 +156,7 @@ def _unsupported_tokens(text: str, source: str) -> list[str]:
 
 
 def _token_in(token: str, lowered_source: str) -> bool:
-    """Обозначение ищется целиком, пробелы и дефисы не важны: Pt100 = Pt 100, RS485 = RS-485."""
+    """Обозначение ищется целиком, без учёта пробелов и дефисов."""
     letters = [re.escape(char) for char in token.lower() if char != "-"]
     pattern = r"[\s\-]?".join(letters)
     return re.search(rf"(?<![a-zа-яё0-9]){pattern}(?![a-zа-яё0-9])", lowered_source) is not None
@@ -172,7 +172,7 @@ def _unsupported_claims(text: str, source: str) -> list[str]:
 
 
 def _denied_features(text: str, product: Product) -> list[str]:
-    """Вход говорит «нет», а текст утверждает обратное: «С дисплеем: Нет» → «прибор с дисплеем»."""
+    """Во входе «С дисплеем: Нет», а в тексте «прибор с дисплеем»."""
     lowered = text.lower()
     found = []
     for key, value in product.specs.items():

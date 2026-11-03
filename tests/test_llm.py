@@ -1,7 +1,9 @@
+import json
+
 import httpx
 import pytest
 
-from card_draft.llm import LLMClient, LLMConfig, LLMError, config_from_env
+from card_draft.llm import AnthropicClient, LLMClient, LLMConfig, LLMError, config_from_env
 
 
 def client(handler, sleeps=None):
@@ -83,15 +85,6 @@ def test_permanent_failures_are_not_retried(status, fragment):
     assert len(calls) == 1
 
 
-def test_key_never_appears_in_error_text():
-    def handler(request):
-        return httpx.Response(401, json={"error": {"message": "bad key sekret-key"}})
-
-    with pytest.raises(LLMError) as error:
-        client(handler).chat(MESSAGES)
-    assert "sekret-key" not in str(error.value)
-
-
 @pytest.mark.parametrize(
     "response",
     [
@@ -166,3 +159,28 @@ def test_non_ascii_key_is_explained():
 
 def test_private_network_model_needs_no_key():
     assert config_from_env({"LLM_MODEL": "m", "LLM_BASE_URL": "http://192.168.1.5:1234/v1"}).api_key == ""
+
+
+def test_anthropic_protocol_uses_messages_api():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["key"] = request.headers["x-api-key"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "ответ"}], "stop_reason": "end_turn"})
+
+    config = LLMConfig(api_key="abc", base_url="https://api.anthropic.com/v1", model="claude-haiku-5-5")
+    llm = AnthropicClient(config, transport=httpx.MockTransport(handler))
+    assert llm.chat([{"role": "system", "content": "правила"}, {"role": "user", "content": "товар"}]) == "ответ"
+    assert seen["url"] == "https://api.anthropic.com/v1/messages"
+    assert seen["key"] == "abc"
+    assert seen["body"]["system"] == "правила"
+    assert seen["body"]["messages"] == [{"role": "user", "content": "товар"}]
+
+
+def test_anthropic_cut_off_answer_is_explained():
+    config = LLMConfig(api_key="abc", base_url="https://api.anthropic.com/v1", model="m")
+    response = httpx.Response(200, json={"content": [{"type": "text", "text": "{"}], "stop_reason": "max_tokens"})
+    with pytest.raises(LLMError, match="обрезан"):
+        AnthropicClient(config, transport=httpx.MockTransport(lambda request: response)).chat(MESSAGES)

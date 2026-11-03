@@ -4,7 +4,7 @@ import json
 import re
 from collections.abc import Callable
 
-from .checks import DESCRIPTION_MIN, UNIT_WORD_RE, check_card, has_thin_data, key_specs
+from .checks import DESCRIPTION_MIN, NO_DATA, UNIT_WORD_RE, check_card, has_thin_data, key_specs
 from .input_data import Product
 from .llm import LLMError
 from .prompts import SYSTEM_PROMPT, build_fix_prompt, build_user_prompt
@@ -42,7 +42,7 @@ def make_draft(product: Product, chat: Callable[[list[dict]], str]) -> dict:
 
     if best is None:
         return result | {"status": "error", "problems": [api_failure or BAD_JSON]}
-    fields = _card_fields(best)
+    fields = _card_fields(best) | {"model": getattr(chat, "used", "")}
     problems = best_problems + ([api_failure] if api_failure else [])
     if has_thin_data(product) and len(fields["seo_description"]) < DESCRIPTION_MIN:
         problems.append(
@@ -71,7 +71,7 @@ def _empty_result(product: Product) -> dict:
     return {
         "status": "",
         "name": product.name,
-        "manufacturer": product.manufacturer or "данных нет",
+        "manufacturer": product.manufacturer or NO_DATA,
         "seo_title": "",
         "seo_description": "",
         "key_specs": key_specs(product),
@@ -80,6 +80,7 @@ def _empty_result(product: Product) -> dict:
         "problems": [],
         "warnings": product.notes + _specs_without_unit(product),
         "attempts": 0,
+        "model": "",
     }
 
 

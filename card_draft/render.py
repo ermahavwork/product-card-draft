@@ -19,11 +19,24 @@ def to_markdown(result: dict) -> str:
     lines += ["## Ключевые характеристики", ""]
     lines += [f"- {spec['name']}: {spec['value']}" for spec in result["key_specs"]]
     lines.append("")
-    lines += _list_section("Поисковые запросы", result["search_queries"])
+    lines += _list_section("Поисковые запросы", _queries(result))
+    lines += _list_section("Реальные запросы страницы из Метрики", [f"{p['phrase']} — визитов: {p['visits']}" for p in result.get("metrika_phrases", [])])
     block = result["commercial_block"]
     if block["audience"] or block["tasks"]:
         lines += ["## Для менеджера", "", f"**Кому подходит:** {block['audience']}", "", f"**Какие задачи решает:** {block['tasks']}", ""]
+    if result.get("model"):
+        lines += [f"Модель: {result['model']}, попыток: {result['attempts']}.", ""]
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _queries(result: dict) -> list[str]:
+    stats = result.get("query_stats")
+    if not stats:
+        return result["search_queries"]
+    return [
+        f"{item['query']} — " + ("частотность не проверена" if item["frequency"] is None else f"{item['frequency']} показов в месяц")
+        for item in stats
+    ]
 
 
 def _list_section(title: str, items: list[str]) -> list[str]:

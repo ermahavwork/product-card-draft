@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 
 from .input_data import InputError, load_products
-from .llm import LLMError, build_chat
+from .llm import LLMError
+from .providers import available_models, build_chat
 from .render import to_markdown
+from .seo_data import add_seo_data
 from .service import make_draft
 
 EXIT_OK, EXIT_NEEDS_ATTENTION, EXIT_BAD_INPUT, EXIT_API = 0, 1, 2, 3
@@ -15,9 +17,18 @@ EXIT_OK, EXIT_NEEDS_ATTENTION, EXIT_BAD_INPUT, EXIT_API = 0, 1, 2, 3
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Черновик карточки товара по данным о приборе.")
-    parser.add_argument("file", help="JSON-файл с товаром или списком товаров; «-» читает стандартный ввод")
+    parser.add_argument("file", nargs="?", help="JSON-файл с товаром или списком товаров; «-» читает стандартный ввод")
     parser.add_argument("--format", choices=("json", "md"), default="json")
+    parser.add_argument("--scan", action="store_true", help="показать доступные подписки и ключи")
+    parser.add_argument("--provider", help="claude-cli, codex-cli, gemini-cli, anthropic, openai, google, compatible")
+    parser.add_argument("--model", help="модель выбранного провайдера; по умолчанию самая слабая")
     args = parser.parse_args(argv)
+
+    if args.scan:
+        print(json.dumps(available_models(), ensure_ascii=False, indent=2))
+        return EXIT_OK
+    if not args.file:
+        parser.error("укажите файл с товаром или --scan")
 
     try:
         products = load_products(_read(args.file))
@@ -25,12 +36,12 @@ def main(argv: list[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return EXIT_BAD_INPUT
     try:
-        chat = build_chat()
+        chat = build_chat(args.provider, args.model)
     except LLMError as error:
         print(error, file=sys.stderr)
         return EXIT_API
 
-    results = [make_draft(product, chat) for product in products]
+    results = [add_seo_data(make_draft(product, chat), product) for product in products]
     if args.format == "md":
         print("\n---\n\n".join(to_markdown(result) for result in results))
     else:

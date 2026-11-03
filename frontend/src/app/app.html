@@ -1,0 +1,137 @@
+<header class="top">
+  <h1>Черновик карточки прибора</h1>
+  <p>Текст пишет модель, характеристики берутся только из ваших данных. Всё, чего нет на входе, сервис покажет как «данных нет».</p>
+</header>
+
+<main class="desk">
+  <form class="input" (ngSubmit)="submit()">
+    <label for="example">Пример товара</label>
+    <select id="example" [ngModel]="product()" (ngModelChange)="product.set($event)" name="example">
+      @for (item of examples(); track item.title) {
+        <option [ngValue]="item.product">{{ item.title }}</option>
+      }
+    </select>
+
+    <div class="row">
+      <div>
+        <label for="provider">Модель из подписки или по ключу</label>
+        <select id="provider" [ngModel]="provider()" (ngModelChange)="chooseProvider($event)" name="provider">
+          <option value="">Самая слабая из доступных</option>
+          @for (item of providers(); track item.provider) {
+            <option [value]="item.provider">{{ item.provider }} ({{ item.kind }})</option>
+          }
+        </select>
+      </div>
+      <div>
+        <label for="model">Какая именно</label>
+        <select id="model" [ngModel]="model()" (ngModelChange)="model.set($event)" name="model" [disabled]="!provider()">
+          <option value="">Самая слабая</option>
+          @for (name of models(); track name) {
+            <option [value]="name">{{ name }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <label for="product">Данные о приборе в формате JSON</label>
+    <textarea id="product" [ngModel]="product()" (ngModelChange)="product.set($event)" name="product" spellcheck="false"></textarea>
+
+    <button type="submit" [disabled]="busy() || !product().trim()">
+      {{ busy() ? 'Модель пишет черновик…' : 'Создать черновик' }}
+    </button>
+    @if (failure()) {
+      <p class="failure" role="alert">{{ failure() }}</p>
+    }
+  </form>
+
+  <section class="output" aria-live="polite">
+    @if (draft(); as card) {
+      <div class="status" [class]="'status ' + card.status">
+        <strong>{{ statusTitle() }}</strong>
+        @if (card.model) {
+          <span>{{ card.model }}, попыток: {{ card.attempts }}</span>
+        }
+      </div>
+
+      @if (card.problems.length) {
+        <h2>Что исправить</h2>
+        <ul>
+          @for (problem of card.problems; track problem) {
+            <li>{{ problem }}</li>
+          }
+        </ul>
+      }
+      @if (card.warnings.length) {
+        <h2>Что уточнить</h2>
+        <ul>
+          @for (warning of card.warnings; track warning) {
+            <li>{{ warning }}</li>
+          }
+        </ul>
+      }
+
+      @if (card.seo_title) {
+        <h2>SEO-заголовок</h2>
+        <p class="title">{{ card.seo_title }}</p>
+        <div class="scale" [class.over]="card.seo_title.length > 70">
+          <i [style.left.%]="gauge(card.seo_title.length, 90)"></i>
+          <b [style.left.%]="0" [style.width.%]="gauge(70, 90)"></b>
+        </div>
+        <p class="reading">{{ card.seo_title.length }} из 70 символов</p>
+      }
+
+      @if (card.seo_description) {
+        <h2>SEO-описание</h2>
+        <p>{{ card.seo_description }}</p>
+        <div class="scale" [class.over]="card.seo_description.length < 800 || card.seo_description.length > 1200">
+          <i [style.left.%]="gauge(card.seo_description.length, 1400)"></i>
+          <b [style.left.%]="gauge(800, 1400)" [style.width.%]="gauge(400, 1400)"></b>
+        </div>
+        <p class="reading">{{ card.seo_description.length }} из 800–1200 символов</p>
+      }
+
+      <h2>Ключевые характеристики</h2>
+      <dl>
+        @for (spec of card.key_specs; track spec.name) {
+          <div>
+            <dt>{{ spec.name }}</dt>
+            <dd [class.empty]="spec.value === 'данных нет'">{{ spec.value }}</dd>
+          </div>
+        }
+      </dl>
+
+      @if (card.query_stats.length) {
+        <h2>Поисковые запросы</h2>
+        <ul>
+          @for (item of card.query_stats; track item.query) {
+            <li>{{ item.query }} <small>{{ queryLine(item) }}</small></li>
+          }
+        </ul>
+      }
+      @if (card.metrika_phrases.length) {
+        <h2>Реальные запросы страницы из Метрики</h2>
+        <ul>
+          @for (item of card.metrika_phrases; track item.phrase) {
+            <li>{{ item.phrase }} <small>визитов: {{ item.visits }}</small></li>
+          }
+        </ul>
+      }
+
+      @if (card.commercial_block.audience) {
+        <h2>Для менеджера</h2>
+        <p><strong>Кому подходит.</strong> {{ card.commercial_block.audience }}</p>
+        <p><strong>Какие задачи решает.</strong> {{ card.commercial_block.tasks }}</p>
+      }
+
+      <div class="copy">
+        <button type="button" (click)="copy('Markdown', card.markdown)">Скопировать Markdown</button>
+        <button type="button" (click)="copy('JSON', asJson(card))">Скопировать JSON</button>
+        @if (copied()) {
+          <span role="status">{{ copied() }} скопирован</span>
+        }
+      </div>
+    } @else {
+      <p class="hint">Выберите пример или вставьте свои данные. Без ключей выберите модель demo: она отвечает записанными ответами.</p>
+    }
+  </section>
+</main>

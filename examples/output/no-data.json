@@ -38,6 +38,9 @@
     "warnings": [
       "Не заполнено поле manufacturer: в карточке производитель не указан."
     ],
-    "attempts": 0
+    "attempts": 0,
+    "model": "",
+    "query_stats": [],
+    "metrika_phrases": []
   }
 ]

@@ -1,4 +1,4 @@
-"""Клиент LLM по протоколу OpenAI Chat Completions: OpenAI, OpenRouter, Groq, LM Studio, Ollama и другие."""
+"""Клиент LLM по протоколу OpenAI Chat Completions."""
 
 import ipaddress
 import os
@@ -7,16 +7,16 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import httpx
-from dotenv import load_dotenv
 
 MAX_ATTEMPTS = 3
+MAX_TOKENS = 2000
 TIMEOUT_SECONDS = 90
 MAX_RETRY_AFTER_SECONDS = 30
 TEMPORARY_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
 
 
 class LLMError(RuntimeError):
-    """Сбой обращения к модели: сообщение показывается пользователю и не содержит ключа."""
+    """Сбой обращения к модели: сообщение не содержит ключа."""
 
 
 @dataclass(frozen=True)
@@ -24,11 +24,6 @@ class LLMConfig:
     api_key: str
     base_url: str
     model: str
-
-
-def build_chat():
-    load_dotenv()
-    return LLMClient(config_from_env()).chat
 
 
 def config_from_env(env=os.environ) -> LLMConfig:
@@ -64,12 +59,22 @@ class LLMClient:
     def __init__(self, config: LLMConfig, transport=None, sleep=time.sleep):
         self.config = config
         self._sleep = sleep
-        headers = {"Authorization": f"Bearer {config.api_key}"} if config.api_key else {}
-        self._http = httpx.Client(headers=headers, timeout=TIMEOUT_SECONDS, transport=transport)
+        self._http = httpx.Client(headers=self._headers(), timeout=TIMEOUT_SECONDS, transport=transport)
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+
+    def _path(self) -> str:
+        return "chat/completions"
 
     def chat(self, messages: list[dict[str, str]]) -> str:
-        body = {"model": self.config.model, "messages": messages, "temperature": 0.2}
-        return _read_text(self._post_with_retries(body))
+        return self._read(self._post_with_retries(self._body(messages)))
+
+    def _body(self, messages: list[dict[str, str]]) -> dict:
+        return {"model": self.config.model, "messages": messages}
+
+    def _read(self, response: httpx.Response) -> str:
+        return _read_text(response)
 
     def _post_with_retries(self, body: dict) -> httpx.Response:
         failure, delay = "", 0.0
@@ -78,7 +83,7 @@ class LLMClient:
                 self._sleep(delay)
             delay = 2.0**attempt
             try:
-                response = self._http.post(f"{self.config.base_url}/chat/completions", json=body)
+                response = self._http.post(f"{self.config.base_url}/{self._path()}", json=body)
             except httpx.TimeoutException:
                 failure = f"Модель не ответила за {TIMEOUT_SECONDS} с."
                 continue
@@ -86,7 +91,8 @@ class LLMClient:
                 failure = "Модель не ответила: нет соединения с сервером API."
                 continue
             if response.status_code not in TEMPORARY_STATUSES:
-                self._raise_for_permanent(response)
+                if response.is_error:
+                    self._raise_for_permanent(response)
                 return response
             failure = f"API временно недоступен (код {response.status_code})."
             delay = _retry_after(response) or delay
@@ -94,14 +100,39 @@ class LLMClient:
 
     def _raise_for_permanent(self, response: httpx.Response) -> None:
         status = response.status_code
-        if status < 400:
-            return
         if status in (401, 403):
             raise LLMError(f"API отклонил ключ или доступ (код {status}): проверьте LLM_API_KEY.")
         if status == 404:
             raise LLMError("API не нашёл модель или адрес (код 404): проверьте LLM_MODEL и LLM_BASE_URL.")
         reason = response.text[:200].replace(self.config.api_key, "***") if self.config.api_key else response.text[:200]
         raise LLMError(f"API не принял запрос (код {status}): {reason}")
+
+
+class AnthropicClient(LLMClient):
+    """Anthropic Messages API: своя схема запроса и ответа, повторы общие."""
+
+    def _headers(self) -> dict:
+        return {"x-api-key": self.config.api_key, "anthropic-version": "2023-06-01"}
+
+    def _path(self) -> str:
+        return "messages"
+
+    def _body(self, messages: list[dict[str, str]]) -> dict:
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        dialog = [m for m in messages if m["role"] != "system"]
+        return {"model": self.config.model, "system": system, "messages": dialog, "max_tokens": MAX_TOKENS}
+
+    def _read(self, response: httpx.Response) -> str:
+        try:
+            data = response.json()
+            text = "".join(part.get("text", "") for part in data["content"])
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise LLMError("API вернул ответ неожиданного формата.") from error
+        if data.get("stop_reason") == "max_tokens":
+            raise LLMError("Ответ модели обрезан по лимиту длины.")
+        if not text.strip():
+            raise LLMError("API вернул пустой ответ.")
+        return text
 
 
 def _retry_after(response: httpx.Response) -> float | None:
