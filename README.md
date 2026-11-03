@@ -6,25 +6,70 @@
 
 ## Как проверить за две минуты, без ключей
 
-Нужен только Python 3.11 или новее. Node.js не нужен: сборка интерфейса лежит в репозитории.
+Нужны только Git и Python 3.11 или новее. Node.js не нужен: готовая сборка Angular лежит в репозитории. Одна команда создаёт окружение, ставит Django и зависимости, создаёт `.env` и запускает сервер:
 
 ```bash
 git clone https://github.com/ermahavwork/product-card-draft.git
 cd product-card-draft
-python3 -m venv .venv             # Windows: python -m venv .venv
-.venv/bin/pip install -e ".[dev]"  # Windows: .venv\Scripts\pip install -e ".[dev]"
-.venv/bin/python manage.py runserver  # Windows: .venv\Scripts\python manage.py runserver
+python run.py        # macOS и Linux: python3 run.py
 ```
 
-Откройте http://127.0.0.1:8000, в поле модели выберите `demo` и нажмите «Создать черновик». Режим demo отдаёт записанные ответы модели для товаров из `examples/input`, а вся остальная цепочка работает по-настоящему: разбор входа, проверки, характеристики, вывод. В результате это подписано как `demo/записанные ответы`.
+Откройте http://127.0.0.1:8000, в поле модели выберите `demo`, нажмите «Создать черновик».
 
-Или через Docker: `docker build -t card-draft . && docker run -p 127.0.0.1:8000:8000 card-draft`. Для работы с настоящей моделью добавьте `--env-file .env`.
+![Начальный экран: выбор примера и модели](docs/screenshots/1-start.png)
 
-Тесты работают без ключей и без сети: `.venv/bin/pytest` (Python) и `cd frontend && npm ci && npm test` (Angular, нужен Chrome и `CHROME_BIN`).
+Режим `demo` отдаёт записанные ответы модели для товаров из `examples/input`, а вся остальная цепочка работает по-настоящему: разбор входа, проверки, характеристики, вывод. В результате это подписано как `demo/записанные ответы`. Чтобы получить настоящий ответ модели, подключите её по разделу ниже.
+
+### Что вы увидите
+
+Готовый черновик со шкалами длины: зелёная зона на шкале показывает норму из задания.
+
+![Готовый черновик ТРМ138В](docs/screenshots/2-ready.png)
+
+Если фактов мало, сервис говорит об этом прямо и не добирает объём выдумкой.
+
+![Клещи токовые: данных мало](docs/screenshots/3-little-data.png)
+
+Некорректный JSON получает понятное сообщение с номером строки.
+
+![Сообщение о некорректном JSON](docs/screenshots/4-bad-json.png)
+
+Интерфейс работает и на телефоне.
+
+<img src="docs/screenshots/5-phone.png" alt="Экран телефона" width="260">
+
+### Другие способы запуска
+
+Docker, Python ставить не нужно:
+
+```bash
+docker build -t card-draft .
+docker run -p 127.0.0.1:8000:8000 card-draft                   # режим demo
+docker run -p 127.0.0.1:8000:8000 --env-file .env card-draft   # с вашим ключом
+```
+
+Вручную:
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -e ".[dev]"       # Windows: .venv\Scripts\pip install -e ".[dev]"
+.venv/bin/python manage.py runserver    # Windows: .venv\Scripts\python manage.py runserver
+```
+
+Пересобрать интерфейс Angular (нужен Node.js 20 или новее): `python run.py --frontend`.
+
+### Тесты
+
+Работают без ключей и без сети:
+
+```bash
+.venv/bin/pytest                  # Python; Windows: .venv\Scripts\pytest
+cd frontend && npm ci && npm test # Angular, нужен Chrome и переменная CHROME_BIN
+```
 
 ## Подключение модели
 
-Задание просит одну модель, поэтому достаточно настроить любую одну. Скопируйте `env.example` в `.env` и заполните нужное, либо войдите в подписку.
+Задание просит одну модель, поэтому достаточно настроить любую одну. Откройте файл `.env` (его создаёт `run.py` из `env.example`), заполните нужное и перезапустите сервер, либо войдите в подписку.
 
 | Способ | Как подключить | Какая модель берётся |
 |---|---|---|
@@ -64,7 +109,7 @@ card-draft examples/input/bust3.json --provider openai --model gpt-5-mini
 ## Устройство
 
 - **Бэкенд:** Python, Django без базы данных. `card_draft/input_data.py` разбирает вход, `checks.py` проверяет текст, `service.py` управляет повторами, `providers.py` и `llm.py` подключают модели, `seo_data.py` обращается к Яндексу.
-- **Фронтенд:** Angular, TypeScript. Исходники в `frontend/src/app`, готовая сборка в `frontend/dist`. Пересобрать: `cd frontend && npm ci && npm run build`.
+- **Фронтенд:** Angular, TypeScript. Исходники в `frontend/src/app`, готовая сборка в `frontend/dist`. 
 
 Django выбран, потому что сразу даёт защиту от CSRF и раздачу статики, а FastAPI в таком небольшом сервисе дал бы лишь немного более короткий код.
 
