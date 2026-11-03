@@ -61,10 +61,9 @@ def parse_model_json(answer: str) -> dict | None:
     if start == -1 or end <= start:
         return None
     try:
-        data = json.loads(answer[start : end + 1])
+        return json.loads(answer[start : end + 1])
     except json.JSONDecodeError:
         return None
-    return data if isinstance(data, dict) else None
 
 
 def _empty_result(product: Product) -> dict:

@@ -104,7 +104,8 @@ class LLMClient:
             raise LLMError(f"API отклонил ключ или доступ (код {status}): проверьте LLM_API_KEY.")
         if status == 404:
             raise LLMError("API не нашёл модель или адрес (код 404): проверьте LLM_MODEL и LLM_BASE_URL.")
-        reason = response.text[:200].replace(self.config.api_key, "***") if self.config.api_key else response.text[:200]
+        text = response.text.replace(self.config.api_key, "***") if self.config.api_key else response.text
+        reason = text[:200]
         raise LLMError(f"API не принял запрос (код {status}): {reason}")
 
 

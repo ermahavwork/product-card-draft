@@ -110,6 +110,14 @@ describe('App', () => {
     expect(fixture.nativeElement.textContent).toContain('Некорректный JSON');
   });
 
+  it('does not call a server error a lost connection', async () => {
+    const fixture = await create();
+    fixture.componentInstance.submit();
+    http.expectOne('/api/draft').flush('<html>', { status: 500, statusText: 'Error' });
+    await fixture.whenStable();
+    expect(fixture.nativeElement.textContent).toContain('Сервер вернул ошибку 500');
+  });
+
   it('explains when the server cannot be reached', async () => {
     const fixture = await create();
     fixture.componentInstance.submit();

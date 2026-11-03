@@ -112,3 +112,30 @@ def test_main_examples_go_first_with_clear_titles():
     assert "ТРМ138В" in titles[0]
     assert "БУСТ3" in titles[1]
     assert any("команда" in title for title in titles)
+
+
+def test_needs_data_works_without_any_model(monkeypatch):
+    def broken(provider=None, model=None):
+        raise LLMError("Нет доступной модели")
+
+    monkeypatch.setattr(views, "build_chat", broken)
+    data = post(json.dumps({"product": '{"name": "Х"}'})).json()
+    assert data["status"] == "needs_data"
+
+
+def test_demo_works_for_thin_example():
+    example = next(item for item in Client().get("/api/examples").json()["examples"] if "Клещи" in item["title"])
+    data = post(json.dumps({"product": example["product"], "provider": "demo"})).json()
+    assert data["status"] == "needs_review"
+    assert data["seo_title"]
+
+
+@pytest.mark.parametrize("body", ['{"product": "{}", "model": 5}', '{"product": "{}", "provider": ["a"]}', "[" * 100000])
+def test_wrong_types_and_deep_nesting_are_400(model, body):
+    assert post(body).status_code == 400
+
+
+def test_too_big_body_is_explained():
+    response = post(json.dumps({"product": "я" * 300000}))
+    assert response.status_code == 400
+    assert response.json()["detail"]

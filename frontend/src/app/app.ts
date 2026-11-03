@@ -96,7 +96,8 @@ export class App {
         this.busy.set(false);
       },
       error: (error: HttpErrorResponse) => {
-        this.failure.set(error.error?.detail ?? 'Нет связи с сервером: проверьте, что он запущен.');
+        const lost = error.status === 0 ? 'Нет связи с сервером: проверьте, что он запущен.' : `Сервер вернул ошибку ${error.status}.`;
+        this.failure.set(error.error?.detail ?? lost);
         this.busy.set(false);
       },
     });

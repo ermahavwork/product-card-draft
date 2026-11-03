@@ -35,11 +35,13 @@ def main(argv: list[str] | None = None) -> int:
     except InputError as error:
         print(error, file=sys.stderr)
         return EXIT_BAD_INPUT
-    try:
-        chat = build_chat(args.provider, args.model)
-    except LLMError as error:
-        print(error, file=sys.stderr)
-        return EXIT_API
+    chat = None
+    if any(not product.blockers() for product in products):
+        try:
+            chat = build_chat(args.provider, args.model)
+        except LLMError as error:
+            print(error, file=sys.stderr)
+            return EXIT_API
 
     results = [add_seo_data(make_draft(product, chat), product) for product in products]
     if args.format == "md":

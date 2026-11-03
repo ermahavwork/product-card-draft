@@ -71,6 +71,16 @@ def test_manometer_normal_text_passes(text):
     assert find_unsupported(text, MANOMETER) == []
 
 
+@pytest.mark.parametrize("text", ["Питание 220/380 В", "Размер 100х50 мм", "Размер 100x50 мм", "Всего 8каналов", "Комплект 16шт"])
+def test_glued_and_slashed_numbers_are_caught(text):
+    assert find_unsupported(text, MANOMETER)
+
+
+def test_real_slashed_and_sized_values_pass():
+    product = Product(name="Прибор", specs={"Скорость": "10/100 Мбит/с", "Размер": "100х50 мм"})
+    assert find_unsupported("Скорость 10/100 Мбит/с, размер 100х50 мм", product) == []
+
+
 def test_sign_of_number_matters():
     product = Product(name="Регулятор", specs={"Рабочая температура": "-30…+55 ⁰С"})
     assert find_unsupported("Температура от +30 до +55 °C", product)

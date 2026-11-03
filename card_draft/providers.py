@@ -30,6 +30,7 @@ NOT_TEXT = re.compile(
     r"embed|whisper|tts|audio|image|vision|moderation|realtime|transcribe|search|robotics|live|dall|sora|veo|guard|aqa|research|computer|thinking"
 )
 RECORDED_DIR = Path(__file__).resolve().parent.parent / "examples" / "output"
+API_KEY_NAMES = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"}
 DEMO = "demo"
 DEMO_LABEL = "записанные ответы"
 DATED = re.compile(r"\d{4}-\d{2}-\d{2}|\d{8}")
@@ -38,8 +39,13 @@ DATED = re.compile(r"\d{4}-\d{2}-\d{2}|\d{8}")
 def _run(argv: list[str], input: str | None = None, cwd: str | None = None) -> tuple[int, str]:
     # На Windows команды npm лежат как .cmd: без полного пути subprocess их не находит.
     argv = [shutil.which(argv[0]) or argv[0], *argv[1:]]
+    # Иначе командная строка подписки списывала бы деньги с ключа из .env.
+    clean_env = {name: value for name, value in os.environ.items() if name not in API_KEY_NAMES}
     try:
-        done = subprocess.run(argv, input=input, capture_output=True, text=True, encoding="utf-8", timeout=CLI_TIMEOUT_SECONDS, cwd=cwd)
+        done = subprocess.run(
+            argv, input=input, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=CLI_TIMEOUT_SECONDS, cwd=cwd, env=clean_env,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return 1, ""
     return done.returncode, done.stdout or done.stderr
@@ -49,17 +55,13 @@ def rank_models(names: list[str]) -> list[str]:
     """Текстовые модели от самой слабой к самой сильной."""
 
     def key(name: str) -> tuple:
-        tier = next((index for index, word in enumerate(TIERS) if word in name), len(TIERS))
+        words = re.split(r"[-_.:/]", name.lower())
+        tier = next((index for index, word in enumerate(TIERS) if word in words), len(TIERS))
         version = tuple(-int(part) for part in re.findall(r"\d+", name))
         return tier, bool(DATED.search(name)), version
 
     cleaned = [name.removeprefix("models/") for name in names]
     return sorted((name for name in cleaned if not NOT_TEXT.search(name.lower())), key=key)
-
-
-def weakest_model(names: list[str]) -> str | None:
-    ranked = rank_models(names)
-    return ranked[0] if ranked else None
 
 
 class CliChat:
@@ -69,27 +71,26 @@ class CliChat:
         self.name, self.model, self._run = name, model, run
 
     def __call__(self, messages: list[dict]) -> str:
-        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        dialog = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages if m["role"] != "system")
-        argv, stdin = self._command(system, dialog)
+        # Весь текст идёт через stdin: на Windows многострочные аргументы .cmd обрезаются.
+        prompt = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages)
         with tempfile.TemporaryDirectory() as empty_dir:
-            code, output = self._run(argv, input=stdin, cwd=empty_dir)
+            code, output = self._run(self._command(), input=prompt, cwd=empty_dir)
         if code != 0 or not output.strip():
             raise LLMError(f"{self.name} не вернул ответ (код {code}): проверьте вход и лимит подписки.")
         return output
 
-    def _command(self, system: str, dialog: str) -> tuple[list[str], str]:
+    def _command(self) -> list[str]:
         if self.name == "claude-cli":
             return [
-                "claude", "-p", "--model", self.model, "--tools", "", "--strict-mcp-config",
-                "--setting-sources", "", "--system-prompt", system,
-            ], dialog
+                "claude", "-p", "--model", self.model, "--tools", "", "--strict-mcp-config", "--setting-sources", "",
+                "--system-prompt", "Выполни задание из сообщения и верни только то, что оно требует.",
+            ]
         if self.name == "codex-cli":
             return [
                 "codex", "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
                 "--color", "never", "-c", 'model_reasoning_effort="low"', "-m", self.model, "-",
-            ], f"{system}\n\n{dialog}"
-        return ["gemini", "-m", self.model, "-p", ""], f"{system}\n\n{dialog}"
+            ]
+        return ["gemini", "-m", self.model, "-p", ""]
 
 
 class DemoChat:
@@ -102,7 +103,7 @@ class DemoChat:
         request = "\n".join(message["content"] for message in messages)
         for path in sorted(self.recorded_dir.glob("*.json")):
             card = json.loads(path.read_text(encoding="utf-8"))[0]
-            if card["name"] in request and card.get("seo_title"):
+            if json.dumps(card["name"], ensure_ascii=False)[1:-1] in request and card.get("seo_title"):
                 return json.dumps(card, ensure_ascii=False)
         raise LLMError("В демо есть только товары из examples/input с готовым черновиком: для других нужна модель.")
 
@@ -212,7 +213,6 @@ def build_chat_from(
     env=os.environ, which=shutil.which, run: Callable = _run, transport=None, provider: str | None = None, model: str | None = None
 ) -> Chain:
     provider = provider or env.get("LLM_PROVIDER") or "auto"
-    model = model or env.get("LLM_MODEL")
     if provider == DEMO:
         return Chain([(f"{DEMO}/{DEMO_LABEL}", DemoChat())])
     steps = []
@@ -223,6 +223,8 @@ def build_chat_from(
         for candidate in scan(env, which, run, transport):
             if provider in ("auto", candidate.name):
                 chosen = model if provider != "auto" and model else candidate.model
+                if chosen not in candidate.models:
+                    raise LLMError(f"У {candidate.name} нет модели {chosen}. Посмотрите список: card-draft --scan.")
                 steps.append((f"{candidate.name}/{chosen}", candidate.make(chosen)))
     if not steps:
         raise LLMError(HELP)

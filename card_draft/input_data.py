@@ -8,6 +8,10 @@ from dataclasses import dataclass, field
 
 MAX_INPUT_CHARS = 50_000
 EMPTY_MARKS = {"", "-", "—", "–", "н/д", "n/a", "na", "нет данных", "данных нет", "null", "none"}
+HTML_TAG_RE = re.compile(
+    r"</?(?:a|b|br|div|em|font|h[1-6]|hr|i|img|li|ol|p|script|small|span|strong|style|sub|sup|table|tbody|td|th|thead|tr|u|ul)\b[^>]*>",
+    re.IGNORECASE,
+)
 KNOWN_FIELDS = {"name", "manufacturer", "specs", "description", "url"}
 
 
@@ -80,6 +84,8 @@ def _to_product(item) -> Product:
     _fill_specs(product, item.get("specs"))
     for key in sorted(item.keys() - KNOWN_FIELDS):
         product.notes.append(f"Поле «{key}» не используется: проверьте, нет ли опечатки в названии.")
+    if not product.description:
+        product.notes.append("Не заполнено поле description: текст написан только по характеристикам.")
     if not product.manufacturer:
         product.notes.append("Не заполнено поле manufacturer: в карточке производитель не указан.")
     return product
@@ -129,5 +135,5 @@ def _clean(text: str) -> str:
         decoded.encode("utf-8")
     except UnicodeEncodeError as error:
         raise InputError("Текст содержит символы, которые нельзя записать в UTF-8.") from error
-    without_tags = re.sub(r"</?[a-zA-Z][^>]*>", " ", decoded)
+    without_tags = HTML_TAG_RE.sub(" ", decoded)
     return re.sub(r"\s+", " ", without_tags).strip()

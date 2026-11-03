@@ -87,3 +87,14 @@ def test_cli_api_failure_exit_3(model, tmp_path, capsys):
     path.write_text(PRODUCT, encoding="utf-8")
     assert cli.main([str(path)]) == 3
     assert json.loads(capsys.readouterr().out)[0]["status"] == "error"
+
+
+def test_cli_needs_data_works_without_any_model(monkeypatch, tmp_path, capsys):
+    def broken(provider=None, model=None):
+        raise LLMError("Нет доступной модели")
+
+    monkeypatch.setattr(cli, "build_chat", broken)
+    path = tmp_path / "p.json"
+    path.write_text('{"name": "Прибор"}', encoding="utf-8")
+    assert cli.main([str(path)]) == 1
+    assert json.loads(capsys.readouterr().out)[0]["status"] == "needs_data"

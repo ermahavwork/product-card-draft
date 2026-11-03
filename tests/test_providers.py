@@ -1,10 +1,11 @@
 import json
+import sys
 
 import httpx
 import pytest
 
 from card_draft.llm import LLMError
-from card_draft.providers import Chain, CliChat, DemoChat, _run, build_chat_from, scan, weakest_model
+from card_draft.providers import Chain, CliChat, DemoChat, _run, build_chat_from, rank_models, scan
 
 
 @pytest.mark.parametrize(
@@ -14,14 +15,15 @@ from card_draft.providers import Chain, CliChat, DemoChat, _run, build_chat_from
         (["gpt-5", "gpt-5-mini", "gpt-5-nano", "text-embedding-3-small", "gpt-5-nano-tts"], "gpt-5-nano"),
         (["models/gemini-3-pro", "models/gemini-3-flash", "models/gemini-3-flash-lite", "models/gemini-embedding-001"], "gemini-3-flash-lite"),
         (["gpt-6-luna", "o9"], "gpt-6-luna"),
+        (["gemini-3-pro", "gemini-3-flash"], "gemini-3-flash"),
     ],
 )
 def test_weakest_model_is_chosen_from_list(names, expected):
-    assert weakest_model(names) == expected
+    assert rank_models(names)[0] == expected
 
 
 def test_no_text_models_gives_none():
-    assert weakest_model(["text-embedding-3-small", "whisper-1"]) is None
+    assert rank_models(["text-embedding-3-small", "whisper-1"]) == []
 
 
 def run_fake(outputs):
@@ -123,9 +125,10 @@ def test_explicit_provider_is_respected():
 
 def test_model_can_be_set_by_hand():
     chain = build_chat_from(
-        {"LLM_PROVIDER": "openai", "LLM_MODEL": "gpt-5", "OPENAI_API_KEY": "a"},
+        {"LLM_PROVIDER": "openai", "OPENAI_API_KEY": "a"},
         which=lambda name: None,
-        transport=models_transport({"api.openai.com": ["gpt-5-nano"]}),
+        transport=models_transport({"api.openai.com": ["gpt-5-nano", "gpt-5"]}),
+        model="gpt-5",
     )
     assert [name for name, _ in chain.steps] == ["openai/gpt-5"]
 
@@ -147,7 +150,7 @@ def test_cli_chat_sends_prompt_through_stdin_and_returns_text():
 
     assert CliChat("claude-cli", "haiku", run=run)(MESSAGES) == "ответ"
     assert "haiku" in seen["argv"]
-    assert "правила" in seen["argv"]
+    assert "правила" in seen["input"]
     assert "товар" in seen["input"]
 
 
@@ -161,13 +164,57 @@ def test_cli_chat_empty_answer_is_failure():
         CliChat("claude-cli", "haiku", run=lambda argv, **kwargs: (0, "  "))(MESSAGES)
 
 
-def test_real_run_helper_returns_stderr_when_stdout_empty(tmp_path):
-    import sys
-
-    from card_draft.providers import _run
-
+def test_real_run_helper_returns_stderr_when_stdout_empty():
     code, output = _run([sys.executable, "-c", "import sys; sys.stderr.write('Logged in')"])
     assert (code, output) == (0, "Logged in")
+
+
+def test_real_run_helper_survives_non_utf8_output():
+    code, output = _run([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff ok')"])
+    assert code == 0
+    assert "ok" in output
+
+
+def test_api_keys_do_not_reach_subscription_clis(monkeypatch):
+    seen = {}
+
+    def fake(argv, **kwargs):
+        seen["env"] = kwargs["env"]
+
+        class Done:
+            returncode, stdout, stderr = 0, "ok", ""
+
+        return Done()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "platny")
+    monkeypatch.setattr("card_draft.providers.subprocess.run", fake)
+    _run(["claude", "-p"])
+    assert "ANTHROPIC_API_KEY" not in seen["env"]
+
+
+def test_unknown_model_from_browser_is_refused():
+    with pytest.raises(LLMError, match="модел"):
+        build_chat_from(
+            {"LLM_PROVIDER": "openai", "OPENAI_API_KEY": "a"},
+            which=lambda name: None,
+            transport=models_transport({"api.openai.com": ["gpt-5-nano"]}),
+            model="haiku&calc",
+        )
+
+
+def test_env_model_does_not_leak_to_scanned_providers():
+    chain = build_chat_from(
+        {"LLM_PROVIDER": "openai", "LLM_MODEL": "qwen", "OPENAI_API_KEY": "a"},
+        which=lambda name: None,
+        transport=models_transport({"api.openai.com": ["gpt-5-nano"]}),
+    )
+    assert [name for name, _ in chain.steps] == ["openai/gpt-5-nano"]
+
+
+def test_demo_finds_name_with_quotes(tmp_path):
+    (tmp_path / "a.json").write_text(json.dumps([{"name": 'Клещи для "К-3"', "seo_title": "З"}], ensure_ascii=False), encoding="utf-8")
+    prompt = json.dumps({"name": 'Клещи для "К-3"'}, ensure_ascii=False)
+    assert json.loads(DemoChat(tmp_path)([{"role": "user", "content": prompt}]))["seo_title"] == "З"
 
 
 def test_demo_replays_recorded_answer_for_known_product(tmp_path):

@@ -42,7 +42,9 @@ LONG_UNITS = {"вольт": "В", "ампер": "А"}
 NOT_LETTER = r"(?![А-Яа-яЁёA-Za-z])"
 NUMBER = r"\d+(?:[.,]\d+)?"
 # Значение, а не часть обозначения: G1/2, M20, PRT-100 и ТРМ138В сюда не попадают.
-FREE_NUMBER_RE = re.compile(rf"(?<![\w/,])(?<!\d\.)(?<![A-Za-zА-Яа-яЁё]-)([-+−]?)({NUMBER})(?![\w/])")
+FREE_NUMBER_RE = re.compile(rf"(?<![A-Za-zА-Яа-яЁё\d_,])(?<!\d\.)(?<![A-Za-zА-Яа-яЁё]-)([-+−]?)({NUMBER})(?![A-Za-z\d_])")
+THREAD_RE = re.compile(r"(?<=[A-Za-zА-Яа-яЁё])\d+/\d+")
+SIZE_RE = re.compile(r"(?<=\d)\s?[хxХX×*]\s?(?=\d)")
 RANGE_RE = re.compile(
     rf"(?<![\w/,])(?<!\d\.)((?:[-+−]?{NUMBER}\s*(?:…|\.\.\.|–|—|-|до|÷)\s*)*[-+−]?{NUMBER})\s*({UNITS}){NOT_LETTER}"
 )
@@ -97,6 +99,11 @@ def _normalize(text: str) -> str:
     return re.sub(r"[º⁰]", "°", text).replace("°С", "°C").replace("° C", "°C").replace("\u00a0", " ")
 
 
+def _for_numbers(text: str) -> str:
+    """Резьба G1/2 не содержит значений, а размер 100х50 содержит два."""
+    return SIZE_RE.sub(" × ", THREAD_RE.sub(" ", _normalize(text)))
+
+
 def _number(sign: str, value: str) -> str:
     return ("-" if sign in ("-", "−") else "") + value.replace(",", ".")
 
@@ -124,10 +131,10 @@ def _free_numbers(text: str) -> set[str]:
 
 
 def _source_values(product: Product) -> tuple[set[tuple[str, str]], set[str]]:
-    texts = [_normalize(text) for text in (product.name, product.manufacturer, product.description)]
+    texts = [_for_numbers(text) for text in (product.name, product.manufacturer, product.description)]
     pairs, numbers = set(), set()
     for key, value in product.specs.items():
-        key, value = _normalize(key), _normalize(value)
+        key, value = _for_numbers(key), _for_numbers(value)
         texts += [key, value]
         for unit in UNIT_WORD_RE.findall(key):
             pairs |= {(number, _unit(unit)) for number in _free_numbers(value)}
@@ -139,7 +146,7 @@ def _source_values(product: Product) -> tuple[set[tuple[str, str]], set[str]]:
 
 
 def _unsupported_numbers(text: str, product: Product) -> list[str]:
-    text = _normalize(text)
+    text = _for_numbers(text)
     source_pairs, source_numbers = _source_values(product)
     found = [f"{raw} {unit}" for number, unit, raw in _pairs(text) if (number, unit) not in source_pairs]
     found += [

@@ -123,3 +123,11 @@ def test_pathological_json_is_explained(text):
 def test_empty_marks_in_text_fields_count_as_missing():
     product = one('{"name": "-", "manufacturer": "н/д", "description": "-"}')
     assert len(product.blockers()) == 2
+
+
+def test_math_signs_are_kept():
+    assert one('{"name": "А", "description": "I<Imax, U>Umin"}').description == "I<Imax, U>Umin"
+
+
+def test_empty_description_is_reported():
+    assert any("description" in note for note in one('{"name": "А", "specs": {"к": "1"}}').notes)

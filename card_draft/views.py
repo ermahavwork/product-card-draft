@@ -3,6 +3,7 @@
 import json
 
 from django.conf import settings
+from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
@@ -52,19 +53,26 @@ def examples(request: HttpRequest) -> JsonResponse:
 def draft(request: HttpRequest) -> JsonResponse:
     try:
         body = json.loads(request.body)
-    except (UnicodeDecodeError, ValueError):
+    except RequestDataTooBig:
+        return _error(400, "Данные слишком большие: сократите описание товара.")
+    except (UnicodeDecodeError, ValueError, RecursionError):
         return _error(400, "Тело запроса должно быть JSON в кодировке UTF-8.")
     if not isinstance(body, dict) or not isinstance(body.get("product"), str):
         return _error(400, "Передайте данные о товаре в поле product.")
+    provider, model = body.get("provider") or None, body.get("model") or None
+    if not all(value is None or isinstance(value, str) for value in (provider, model)):
+        return _error(400, "Поля provider и model должны быть строками.")
     try:
         products = load_products(body["product"])
     except InputError as error:
         return _error(400, str(error))
     if len(products) != 1:
         return _error(400, "В форме можно обработать только один товар.")
-    try:
-        chat = build_chat(body.get("provider") or None, body.get("model") or None)
-    except LLMError as error:
-        return _error(503, str(error))
+    chat = None
+    if not products[0].blockers():
+        try:
+            chat = build_chat(provider, model)
+        except LLMError as error:
+            return _error(503, str(error))
     result = add_seo_data(make_draft(products[0], chat), products[0])
     return JsonResponse(result | {"markdown": to_markdown(result)})

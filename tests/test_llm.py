@@ -184,3 +184,12 @@ def test_anthropic_cut_off_answer_is_explained():
     response = httpx.Response(200, json={"content": [{"type": "text", "text": "{"}], "stop_reason": "max_tokens"})
     with pytest.raises(LLMError, match="обрезан"):
         AnthropicClient(config, transport=httpx.MockTransport(lambda request: response)).chat(MESSAGES)
+
+
+def test_reason_is_masked_before_cutting():
+    def handler(request):
+        return httpx.Response(400, text="x" * 195 + "sekret-key")
+
+    with pytest.raises(LLMError) as error:
+        client(handler).chat(MESSAGES)
+    assert "sekret" not in str(error.value)
