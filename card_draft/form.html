@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Черновик карточки товара</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 860px; margin: 0 auto; padding: 16px; color: #1c1c1c; background: #fff; }
+  textarea { width: 100%; min-height: 240px; font: 14px/1.4 ui-monospace, monospace; box-sizing: border-box; padding: 8px; }
+  pre { white-space: pre-wrap; background: #f4f4f2; padding: 12px; border-radius: 6px; }
+  button { font: inherit; padding: 8px 16px; cursor: pointer; }
+  #status { margin: 12px 0; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Черновик карточки товара</h1>
+<form id="form">
+  <label for="input">Данные о приборе (JSON)</label>
+  <textarea id="input" required>{
+  "name": "Манометр показывающий DM 02",
+  "manufacturer": "Манотомь",
+  "specs": {
+    "диапазон измерений": "0–1,6 МПа",
+    "класс точности": "1,5",
+    "присоединение": "G1/2",
+    "диаметр корпуса": "100 мм"
+  },
+  "description": "Прибор предназначен для измерения избыточного давления."
+}</textarea>
+  <p><button id="submit" type="submit">Создать черновик</button></p>
+</form>
+<div id="status" role="status"></div>
+<pre id="output" hidden></pre>
+<p><button id="copy" type="button" hidden>Скопировать</button></p>
+<script>
+  const statusBox = document.getElementById("status");
+  const output = document.getElementById("output");
+  const copy = document.getElementById("copy");
+  const submit = document.getElementById("submit");
+
+  document.getElementById("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    output.hidden = copy.hidden = true;
+    statusBox.textContent = "Модель пишет черновик…";
+    try {
+      const response = await fetch("/api/draft", { method: "POST", body: document.getElementById("input").value });
+      const data = await response.json();
+      if (!response.ok) { statusBox.textContent = data.detail; return; }
+      statusBox.textContent = "";
+      output.textContent = data.markdown;
+      output.hidden = copy.hidden = false;
+    } catch {
+      statusBox.textContent = "Нет связи с сервисом.";
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  copy.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(output.textContent);
+    statusBox.textContent = "Скопировано.";
+  });
+</script>
+</body>
+</html>

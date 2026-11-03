@@ -1,0 +1,43 @@
+[
+  {
+    "status": "needs_data",
+    "name": "Манометр без данных",
+    "manufacturer": "данных нет",
+    "seo_title": "",
+    "seo_description": "",
+    "key_specs": [
+      {
+        "name": "класс точности",
+        "value": "данных нет"
+      },
+      {
+        "name": "Диапазон измерений",
+        "value": "данных нет"
+      },
+      {
+        "name": "Питание",
+        "value": "данных нет"
+      },
+      {
+        "name": "Тип корпуса",
+        "value": "данных нет"
+      },
+      {
+        "name": "Интерфейсы",
+        "value": "данных нет"
+      }
+    ],
+    "search_queries": [],
+    "commercial_block": {
+      "audience": "",
+      "tasks": ""
+    },
+    "problems": [
+      "Нет ни specs, ни description: черновик писать не из чего."
+    ],
+    "warnings": [
+      "Не заполнено поле manufacturer: в карточке производитель не указан."
+    ],
+    "attempts": 0
+  }
+]
